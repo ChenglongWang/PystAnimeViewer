@@ -26,17 +26,74 @@ CATEGORIES = {
     '动作': 'dongzuo'
 }
 
-hp_url = 'http://www.dilidili.wang'
-all_items_url = hp_url+'/tvdh'
+HP_URL = 'http://www.dilidili.wang'
 
-def begin_spider(categories, header, out_dir, verbose=True):
-    if not os.path.isdir(out_dir):
-        raise FileNotFoundError('Output dir not exists!')
-        return 
+def video_spider(page_url, verbose=True):
+    try:
+        response = request.Request(page_url, headers=HEADERS)
+        html = request.urlopen(response).read().decode('UTF-8')
+    except error.HTTPError as e:
+        if verbose: console.hud_alert(str(e), 'error', 1.0)
+        print(e)
+        return None
+    except error.URLError as e:
+        if verbose: console.hud_alert(str(e), 'error', 1.0)
+        print(e)
+        return None
+
+    try:
+        soup = bs4.BeautifulSoup(html, 'html.parser')
+        player = soup.find('iframe', id='player_iframe')
+        video_url = player['src'].split('?url=')[1]
+    except Exception as e:
+        if verbose: console.hud_alert('Fail to parse video url', 'error', 1.0)
+        print(e)
+    else:
+        return video_url
+
+def episodes_spider(page_url, verbose=True):
+    ''' scrapy episodes links and dl link from page
+        return episodes, None or return episodes, {'txt':dl_txt, 'url':dl_url}
+    '''
+    try:
+        response = request.Request(page_url, headers=HEADERS)
+        html = request.urlopen(response).read().decode('UTF-8')
+    except error.HTTPError as e:
+        if verbose: console.hud_alert('Error: {}'.format(e), 'error', 1.0)
+        print('HTTP error:',e)
+        return None, None
+    except error.URLError as e:
+        if verbose: console.hud_alert('Error: {}'.format(e), 'error', 1.0)
+        print('URL error:',e)
+        return None, None
+
+    episodes = {}
+    try:
+        soup = bs4.BeautifulSoup(html, 'html.parser')
+        ep_list = soup.find("ul", {"class":"clear"})
+        for child in ep_list:
+            if type(child) is bs4.element.Tag:
+                episodes[child.a.em.span.string] = child.a['href']
+    except Exception as e:
+        if verbose: console.hud_alert('Cannot parse webpage!', 'error', 1.5)
+        print(e)
+        return
+
+    try:
+        dl_link = soup.find('li', {'class':'list_xz'})
+        dl_url = dl_link.a['href']
+        dl_txt = dl_link.a.string
+    except:
+        print('No dl link')
+        return episodes, None
+    else:
+        return episodes, {'txt':dl_txt, 'url':dl_url}
+
+def categories_spider(categories, header, out_dir, verbose=True):
     
     search_index = {}
     for i, (key, value) in enumerate(categories.items()):
-        sub_url = hp_url+'/'+value
+        sub_url = HP_URL+'/'+value
 
         try:
             response = request.Request(sub_url, headers=header)
@@ -47,7 +104,6 @@ def begin_spider(categories, header, out_dir, verbose=True):
 
         soup = BeautifulSoup(html, 'html.parser')
         anime_list = soup.find("div", {"class":"anime_list"})
-        #print(len(anime_list), 'items')
 
         all_contents = {}
         for anime in anime_list:
@@ -57,26 +113,28 @@ def begin_spider(categories, header, out_dir, verbose=True):
                 #      anime.dd.h3.a['href'], anime.dd.get_text())
 
                 all_contents[anime.dd.h3.a.string] = {
-                    'url': hp_url + anime.dd.h3.a['href'],
+                    'url': HP_URL + anime.dd.h3.a['href'],
                     'img': anime.dt.img['src'],
                     'cat':key,
                     'intro': anime.dd.get_text()
                 }
                 search_index[anime.dd.h3.a.string] = key
-                
-        with open(os.path.join(out_dir,value+'.txt'), 'w', encoding='utf8') as f:
-            data = json.dumps(all_contents, indent=2, ensure_ascii=False)
-            f.write(data)
+        if os.path.isdir(out_dir):
+            with open(os.path.join(out_dir,value+'.txt'), 'w', encoding='utf8') as f:
+                data = json.dumps(all_contents, indent=2, ensure_ascii=False)
+                f.write(data)
 
         if verbose:
             from console import hud_alert as alert
             alert('{}/{}: {}'.format(i+1, len(categories.items()), key), 'success', 1.0)
     
-    with open(os.path.join(out_dir,'search'), 'w', encoding='utf8') as f:
-        f.write(json.dumps(search_index, indent=2, ensure_ascii=False))
+    if os.path.isdir(out_dir):
+        with open(os.path.join(out_dir,'search'), 'w', encoding='utf8') as f:
+            f.write(json.dumps(search_index, indent=2, ensure_ascii=False))
         
     
-    return True
+    return search_index
 
 if __name__ == '__main__':
-    begin_spider(CATEGORIES, HEADERS, out_dir='./', verbose=False)
+    
+    categories_spider(CATEGORIES, HEADERS, out_dir='./', verbose=False)

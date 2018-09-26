@@ -5,16 +5,10 @@ All content are scrapped from Dilidili.com
 """
 
 import os, sys, re
-import requests
-import urllib.request as request
-import urllib.error as error
 import functools
-import shutil
 import json
-import zipfile
 import bs4
-from six.moves.urllib.parse import urlparse, urljoin
-from AnimeSpider import CATEGORIES, HEADERS, begin_spider
+from AnimeSpider import CATEGORIES, HEADERS, categories_spider, episodes_spider, video_spider
 
 try:
     import ui
@@ -137,44 +131,21 @@ class AnimeDetailView(object):
         console.hud_alert('Change to Server '+str(self.server_id), 'success', 0.5)
         sender.background_color = 'lightgreen'
         
-
     @ui.in_background
     def load(self):
 
-        try:
-            response = request.Request(self.page_url, headers=self.headers)
-            html = request.urlopen(response).read().decode('UTF-8')
-        except error.HTTPError as e:
-            console.hud_alert('Error: {}'.format(e), 'error', 1.0)
-            print('HTTP error:',e)
-            #sys.exit()
-        except error.URLError as e:
-            console.hud_alert('Error: {}'.format(e), 'error', 1.0)
-            print('URL error:',e)
-            #sys.exit()
+        episodes, download = episodes_spider(self.page_url)
 
-        soup = bs4.BeautifulSoup(html, 'html.parser')
-        try:
-            ep_list = soup.find("ul", {"class":"clear"})
-            for child in ep_list:
-                if type(child) is bs4.element.Tag:
-                    self.episodes[child.a.em.span.string] = child.a['href']
-        except Exception as e:
-            console.hud_alert('Cannot parse webpage!', 'error', 1.5)
-            print(e)
-            return
-
-        dl_link = soup.find('li', {'class':'list_xz'})
-        try:
-            dl_url = dl_link.a['href']
-            dl_txt = dl_link.a.string
-        except:
-            print('No dl link')
+        if episodes:
+            self.episodes = episodes
         else:
-            m = re.search(r'[a-z0-9]{4}', dl_txt)
+            return 
+
+        if download:
+            m = re.search(r'[a-z0-9]{4}', download['txt'])
             page_name = 'BaiduPan ({})'.format(m.group()) if m else 'BaiduPan'
 
-            dl_btn = ui.Button(name='dllink', title=dl_txt, action=functools.partial(self.show_webpage, dl_url, page_name) , **self.button_style)
+            dl_btn = ui.Button(name='dllink', title=download['txt'], action=functools.partial(self.show_webpage, download['url'], page_name) , **self.button_style)
             dl_btn.x, dl_btn.y = 30, 560
             dl_btn.width, dl_btn.height = 70, 30
             self.view.add_subview(dl_btn)
@@ -191,7 +162,6 @@ class AnimeDetailView(object):
             self.view[btn_name].width = self.btn_size[0]
             self.view[btn_name].height = self.btn_size[1]
             self.view[btn_name].action = functools.partial(self.show_video, self.category, self.anime_title, key, value, btn_name)
-                #if i == (len(self.episodes) - 1) else functools.partial(self.show_video,self.category,self.anime_title,key,value,list(self.episodes.items())[i + 1])
 
     def show_webpage(self, url, name, sender):
         webview = ui.WebView(name=name)
@@ -201,27 +171,17 @@ class AnimeDetailView(object):
         webview.load_url(url)
 
     def show_video(self, cat, title, ep, video_page, btn_id, sender):
-        try:
-            response = request.Request(video_page, headers=self.headers)
-            html = request.urlopen(response).read().decode('UTF-8')
-        except error.HTTPError as e:
-            console.hud_alert('Error: {}'.format(e), 'error', 1.0)
-            sys.exit()
-        except error.URLError as e:
-            console.hud_alert('Error: {}'.format(e), 'error', 1.0)
-            sys.exit()
-
-        try:
-            soup = bs4.BeautifulSoup(html, 'html.parser')
-            player = soup.find('iframe', id='player_iframe')
-            original_url = player['src'].split('?url=')[1]
-
+        original_url = video_spider(video_page)
+        if not original_url: return
+        
+        try:    
             webview = ui.WebView(name=ep)
             webview.right_button_items = [ui.ButtonItem('Next', action=functools.partial(self.show_next_video, btn_id, webview))]
             webview.frame = (0,0,640,640)
-            self.app.nav_view.push_view(webview)
+
             print('video url\n',self.video_parsers[self.server_id]+original_url)
             webview.load_url(self.video_parsers[self.server_id]+original_url)
+            self.app.nav_view.push_view(webview)
         except Exception as e:
             console.hud_alert('Load video page error', 'error', 1.0)
             print(e)
@@ -405,7 +365,7 @@ class CategoriesTable(object):
 
     @ui.in_background
     def update_cache(self, sender):
-        begin_spider(CATEGORIES, HEADERS, CACHE_DIR_DEFAULT)
+        categories_spider, episodes(CATEGORIES, HEADERS, CACHE_DIR_DEFAULT)
 
     def search_diag(self, sender):
         keyword = dialogs.input_alert('Search keyword')
