@@ -29,6 +29,9 @@ CATEGORIES = {
 HP_URL = 'http://www.dilidili.wang'
 
 def video_spider(page_url, verbose=True):
+    if verbose: 
+        import console
+    
     try:
         response = request.Request(page_url, headers=HEADERS)
         html = request.urlopen(response).read().decode('UTF-8')
@@ -44,6 +47,7 @@ def video_spider(page_url, verbose=True):
     try:
         soup = bs4.BeautifulSoup(html, 'html.parser')
         player = soup.find('iframe', id='player_iframe')
+        print(player)
         video_url = player['src'].split('?url=')[1]
     except Exception as e:
         if verbose: console.hud_alert('Fail to parse video url', 'error', 1.0)
@@ -53,8 +57,12 @@ def video_spider(page_url, verbose=True):
 
 def episodes_spider(page_url, verbose=True):
     ''' scrapy episodes links and dl link from page
-        return episodes, None or return episodes, {'txt':dl_txt, 'url':dl_url}
+    Return 
+        episodes, download, intro <- all dict type
     '''
+    if verbose:
+        import console
+
     try:
         response = request.Request(page_url, headers=HEADERS)
         html = request.urlopen(response).read().decode('UTF-8')
@@ -67,6 +75,7 @@ def episodes_spider(page_url, verbose=True):
         print('URL error:',e)
         return None, None
 
+    #fetch ep links
     episodes = {}
     try:
         soup = bs4.BeautifulSoup(html, 'html.parser')
@@ -79,19 +88,34 @@ def episodes_spider(page_url, verbose=True):
         print(e)
         return
 
+    # fetch download link
     try:
         dl_link = soup.find('li', {'class':'list_xz'})
         dl_url = dl_link.a['href']
         dl_txt = dl_link.a.string
-    except:
-        print('No dl link')
-        return episodes, None
-    else:
-        return episodes, {'txt':dl_txt, 'url':dl_url}
+        download = {'txt':dl_txt, 'url':dl_url}
+    except Exception as e:
+        print('No dl link', e)
+        download = None
+
+    #fetch intro
+    try:
+        all_intro = soup.find('div', {'class':'detail con24 clear'}).dl.dd #.dd.get_text()
+        keys1 = ['region', 'year', 'tags', 'status']
+        intro1 = {key:all_intro.find_all('div', class_='d_label')[i].get_text() for key, i in zip(keys1, range(4))}
+        keys2 = ['attract', 'cv', 'intro']
+        intro2 = {key:all_intro.find_all('div', class_='d_label2')[i].get_text() for key, i in zip(keys2, range(3))}
+        intro = {**intro1, **intro2}
+    except Exception as e:
+        print('Fail to fetch intro', e)
+        intro = None
+    
+    return episodes, download, intro
+    
 
 def categories_spider(categories, header, out_dir, verbose=True):
     
-    search_index = {}
+    title_index = {}
     for i, (key, value) in enumerate(categories.items()):
         sub_url = HP_URL+'/'+value
 
@@ -115,25 +139,21 @@ def categories_spider(categories, header, out_dir, verbose=True):
                 all_contents[anime.dd.h3.a.string] = {
                     'url': HP_URL + anime.dd.h3.a['href'],
                     'img': anime.dt.img['src'],
-                    'cat':key,
-                    'intro': anime.dd.get_text()
+                    'cat':key
                 }
-                search_index[anime.dd.h3.a.string] = key
-        if os.path.isdir(out_dir):
-            with open(os.path.join(out_dir,value+'.txt'), 'w', encoding='utf8') as f:
-                data = json.dumps(all_contents, indent=2, ensure_ascii=False)
-                f.write(data)
+                title_index[key] = all_contents
 
         if verbose:
             from console import hud_alert as alert
             alert('{}/{}: {}'.format(i+1, len(categories.items()), key), 'success', 1.0)
     
     if os.path.isdir(out_dir):
-        with open(os.path.join(out_dir,'search'), 'w', encoding='utf8') as f:
-            f.write(json.dumps(search_index, indent=2, ensure_ascii=False))
-        
+        with open(os.path.join(out_dir, 'titles'), 'w', encoding='utf8') as f:
+            f.write(json.dumps(title_index, indent=2, ensure_ascii=False))
+        if verbose:
+            alert('Finish updating!', 'success', 1.0)
     
-    return search_index
+    return title_index
 
 if __name__ == '__main__':
     

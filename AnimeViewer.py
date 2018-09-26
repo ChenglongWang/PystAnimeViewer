@@ -38,7 +38,7 @@ class FavoriteButton(object):
         self.btn.x = self.app.nav_view.width - self.btn.width - 10
         self.btn.y = (self.cell.height - self.btn.height) / 2
 
-        if self.app.is_marked(self.app.favorite_dict, anime_title):
+        if self.app.is_marked(anime_title):
             self.set_state_unmark()
         else:
             self.set_state_mark()
@@ -62,16 +62,17 @@ class FavoriteButton(object):
         self.btn.border_color = 'red'
 
 class AnimeDetailView(object):
-    def __init__(self, app, cat, title, url, img_url, intro):
+    def __init__(self, app, anime_title, anime_infos):
         self.app = app
-        self.category = cat
-        self.anime_title = title
-        self.page_url = url
-        self.img_url = img_url
-        self.introduction = intro
+        self.anime_title = anime_title
+        self.anime_infos = anime_infos
+        self.category = anime_infos['cat']
+        self.page_url = anime_infos['url']
+        self.img_url = anime_infos['img']
         self.episodes = {}
         self.headers = HEADERS
         self.server_id = 0
+        self.is_marked = self.app.is_marked(self.anime_title)
         self.video_parsers = [
             'http://www.skyfollowsnow.pro/?url=',
             'https://sg.hackmg.com/index.php?url=',
@@ -97,8 +98,12 @@ class AnimeDetailView(object):
             self.btn_size = (60, 30)
             bounce = (True, True)
             content_size = (1000, 1000)
-
-        self.view = ui.ScrollView(frame=(0, 0, 640, 640), name=title)
+        
+        self.view = ui.ScrollView(frame=(0, 0, 640, 640), name=self.anime_title)
+        self.view.right_button_items = \
+            [ui.ButtonItem(image=ui.Image('iob:star_'+self.app.icon_size),action=self.check_mark)] if \
+            self.is_marked else \
+            [ui.ButtonItem(image=ui.Image('iob:ios7_star_outline_'+self.app.icon_size),action=self.check_mark)]
         self.view.background_color = 'lightgrey'
         self.view.content_size = content_size
         self.view.always_bounce_horizontal = bounce[0]
@@ -106,12 +111,7 @@ class AnimeDetailView(object):
         self.view.data_source = self
         self.view.delegate = self
         self.view.add_subview(ui.ImageView(name='image_viewer', frame=self.image_frame))
-        self.view['image_viewer'].load_from_url(img_url)
-        self.view.add_subview(ui.TextView(name='introduction', frame=self.intro_frame))
-        self.view['introduction'].text = intro
-        self.view['introduction'].editable = False
-        self.view['introduction'].auto_content_inset = True
-        self.view['introduction'].font = ('Helvetica', 16)
+        self.view['image_viewer'].load_from_url(self.img_url)
         self.load()
 
         self.button_style = {'background_color':'white', 'font':('Helvetica', 12), 'corner_radius':4}
@@ -134,7 +134,7 @@ class AnimeDetailView(object):
     @ui.in_background
     def load(self):
 
-        episodes, download = episodes_spider(self.page_url)
+        episodes, download, introduction = episodes_spider(self.page_url)
 
         if episodes:
             self.episodes = episodes
@@ -149,6 +149,13 @@ class AnimeDetailView(object):
             dl_btn.x, dl_btn.y = 30, 560
             dl_btn.width, dl_btn.height = 70, 30
             self.view.add_subview(dl_btn)
+        
+        if introduction:
+            self.view.add_subview(ui.TextView(name='introduction', frame=self.intro_frame))
+            self.view['introduction'].text = '\n'.join(map(str,introduction.values()))
+            self.view['introduction'].editable = False
+            self.view['introduction'].auto_content_inset = True
+            self.view['introduction'].font = ('Helvetica', 16)
 
         for i, (key, value) in enumerate(self.episodes.items()):
             btn_name = 'btn'+str(i)
@@ -190,8 +197,8 @@ class AnimeDetailView(object):
             if self.app.hist_list[0] != new_hist:
                 self.app.hist_list = [new_hist] + self.app.hist_list
             
-            # with open(HISTORY_FILE, 'a', encoding='utf8') as f:
-            #    f.write('{};{};{}\n'.format(cat,title,ep))
+                with open(HISTORY_FILE, 'a', encoding='utf8') as f:
+                   f.write(new_hist+'\n')
         
     def show_next_video(self, btn_id, webviewer, sender):
         try:
@@ -205,15 +212,30 @@ class AnimeDetailView(object):
             self.app.nav_view.pop_view(webviewer)
             self.show_video(self.category, self.anime_title, next_title, self.episodes[next_title], 'btn'+str(next_btn_id), sender)
 
+    def check_mark(self, sender):
+        try:
+            if self.is_marked: #unmark
+                sender.image = ui.Image('iob:ios7_star_outline_'+self.app.icon_size)
+                self.app.favorite_dict.pop(self.anime_title)
+                console.hud_alert('Unmarked', 'success', 0.5)
+            else: #mark
+                sender.image = ui.Image('iob:star_'+self.app.icon_size)
+                self.app.favorite_dict[self.anime_title] = self.anime_infos
+                console.hud_alert('Marked', 'success', 0.5)
+        except Exception as e:
+            console.hud_alert('Error!', 'error', 1.0)
+            print(e)
+        else:
+            self.app.save_favor()
+
 class AnimeTable(object):
-    def __init__(self, app, table_name, category_file, anime_dict=None):
+    def __init__(self, app, table_name, anime_dict=None):
         self.app = app
         self.table_name = table_name
-        self.category_file = category_file
         self.view = ui.TableView(name=table_name,frame=(0, 0, 640, 640))
         self.view.allows_selection = True
 
-        self.anime_dict = anime_dict if anime_dict else self.app.get_contents_from_file(category_file)
+        self.anime_dict = anime_dict
         self.anime_titles = sorted(self.anime_dict.keys())
         self.anime_titles = list(filter(lambda x: x not in self.app.hide_list, self.anime_titles))
 
@@ -243,8 +265,7 @@ class AnimeTable(object):
     def title_tapped(self, selected_title):
         try:
             #selected_title = sender.items[sender.selected_row]['title']
-            detail_view = AnimeDetailView(self.app, self.anime_dict[selected_title]['cat'], selected_title, self.anime_dict[selected_title]['url'],
-                                        self.anime_dict[selected_title]['img'], self.anime_dict[selected_title]['intro'])
+            detail_view = AnimeDetailView(self.app, selected_title, self.anime_dict[selected_title])
             self.app.nav_view.push_view(detail_view.view)
         except Exception as e:
             console.hud_alert('Failed to load page', 'error', 1.0)
@@ -259,9 +280,7 @@ class AnimeTable(object):
     def tableview_cell_for_row(self, tableview, section, row):
         anime_title = self.anime_titles[row]
         cell = ui.TableViewCell('subtitle')
-        #anime_url = self.anime_dict[anime_title]['url']
         cell.text_label.text = anime_title
-        #cell.detail_text_label.text = self.anime_dict[anime_title]['intro']
 
         FavoriteButton(self.app, cell, anime_title, self.anime_dict)
 
@@ -305,17 +324,11 @@ class HistoryTable(object):
 
     def title_tapped(self, cat, title):
         try:
-            category_file = os.path.join(CACHE_DIR_DEFAULT, CATEGORIES[cat]+'.txt')
+            info = self.app.index[cat][title]
         except:
-            category_file = os.path.join(CACHE_DIR_DEFAULT, cat.lower())
-        animes = self.app.get_contents_from_file(category_file)
-
-        try:
-            detail = animes[title]
-        except:
-            console.hud_alert('No anime is found!', 'error', 1.0)
+            console.hud_alert('This anime is not found!', 'error', 1.0)
         else:
-            detail_view = AnimeDetailView(self.app, cat, title, detail['url'], detail['img'], detail['intro'])
+            detail_view = AnimeDetailView(self.app, title, info)
             self.app.nav_view.push_view(detail_view.view)
 
     def tableview_number_of_sections(self, tableview):
@@ -363,42 +376,21 @@ class CategoriesTable(object):
         self.app.save_history()
         self.app.nav_view.close()
 
-    @ui.in_background
-    def update_cache(self, sender):
-        categories_spider, episodes(CATEGORIES, HEADERS, CACHE_DIR_DEFAULT)
-
     def search_diag(self, sender):
         keyword = dialogs.input_alert('Search keyword')
-        if not os.path.isfile(SEARCH_FILE):
-            print('search file not exists!')
-            return
-        with open(SEARCH_FILE, 'r', encoding='utf8') as f:
-            search_index = json.load(f)
+        search_index = list(self.app.index.values())
         
         ret_dict = {}
-        for key, value in search_index.items():
-            if keyword in key:
-                #ret_cat.append(value)
-                if value in ret_dict.keys():
-                    ret_dict[value].append(key)
-                else:
-                    ret_dict[value] = [key]
+        for each_cat in search_index:
+            for key in each_cat.keys():
+                if keyword in key:
+                    ret_dict[key] = each_cat[key]
         
         if not ret_dict:
             console.hud_alert('Not found!', 'error', 1.0)
             return
-
-        final_search_dict = {}
-        for cat, titles in ret_dict.items():
-            try:
-                contents = self.app.get_contents_from_file(
-                                os.path.join(CACHE_DIR_DEFAULT,CATEGORIES[cat]+'.txt'))
-                for title in titles:
-                    final_search_dict[title] = contents[title]
-            except:
-                print('title not found in caches')
             
-        tools_table = AnimeTable(self.app, 'Search', None, final_search_dict)
+        tools_table = AnimeTable(self.app, 'Search', ret_dict)
         self.app.nav_view.push_view(tools_table.view)
 
     def show_history(self, sender):
@@ -407,14 +399,13 @@ class CategoriesTable(object):
         
     def show_mark_list(self, sender):
         try:
-            if self.app.favorite_dict:
-                ani_dict = self.app.get_favorites()
-                tools_table = AnimeTable(self.app, 'Favorites', None, ani_dict)
-                self.app.nav_view.push_view(tools_table.view)
-            else:
-                raise FileNotFoundError('No marked items!')
+            fav_dict = self.app.favorite_dict if self.app.favorite_dict else self.app.get_favorites()
         except Exception as e:
-            console.hud_alert(str(e), 'error', 1.0)
+            console.hud_alert('Get favorites error', 'error', 1.0)
+            print(e)
+        else:
+            tools_table = AnimeTable(self.app, 'Favorites', fav_dict)
+            self.app.nav_view.push_view(tools_table.view)
 
     @ui.in_background
     def load(self):
@@ -422,7 +413,7 @@ class CategoriesTable(object):
         try:
             categories_listdatasource = ui.ListDataSource(
                 {'title': category_name, 'accessory_type': 'disclosure_indicator'}
-                for category_name in sorted(self.categories_dict.keys())+['***Reflash Cache***']
+                for category_name in sorted(self.categories_dict.keys())+['***Update Cache***']
             )
             categories_listdatasource.action = self.category_item_tapped
             categories_listdatasource.delete_enabled = False
@@ -438,27 +429,23 @@ class CategoriesTable(object):
 
     @ui.in_background
     def category_item_tapped(self, sender):
-        self.app.activity_indicator.start()
+        #self.app.activity_indicator.start()
 
         try:
             if sender.items[sender.selected_row]['title'] == '***Update Cache***':
                 if dialogs.alert('Confirm', message='Are u sure to update the cache.\nIt may take a time.',button1='OK'):
-                    self.update_cache(None)
+                    self.app.update_cache(None)
             else:
                 category_name = sender.items[sender.selected_row]['title']
-                category_file = os.path.join(CACHE_DIR_DEFAULT, self.categories_dict[category_name]+'.txt')
-                if os.path.isfile(category_file):
-                    tools_table = AnimeTable(self.app, category_name, category_file)
-                    self.app.nav_view.push_view(tools_table.view)
-                else:
-                    raise FileNotFoundError('cache file not found'+category_file)
-        except FileNotFoundError as e:
-            self.update_cache(None)
+                #category_file = os.path.join(CACHE_DIR_DEFAULT, self.categories_dict[category_name]+'.txt')
+                #if os.path.isfile(category_file):
+                tools_table = AnimeTable(self.app, category_name, self.app.index[category_name])
+                self.app.nav_view.push_view(tools_table.view)
         except Exception as e:
             console.hud_alert('Failed to load tablelist', 'error', 1.0)
             print(e)
-        finally:
-            self.app.activity_indicator.stop()
+        #finally:
+            #self.app.activity_indicator.stop()
 
 class MainApp(object):
 
@@ -468,6 +455,11 @@ class MainApp(object):
 
         self.display_mode = 'pad' if min(ui.get_screen_size())>=768 else 'phone'
         self.icon_size = '24' if self.display_mode == 'phone' else '32'
+
+        if os.path.isfile(TITLES_FILE):
+            self.index = self.get_contents_from_file(TITLES_FILE)
+        else:
+            self.update_cache(None)
 
         categories_table = CategoriesTable(self)
         self.nav_view = ui.NavigationView(categories_table.view)
@@ -482,7 +474,6 @@ class MainApp(object):
         self.old_hist_list, self.hist_list = hist_list[::-1], hist_list[::-1]
         hiddens = self.get_hiddens()
         self.old_hide_list, self.hide_list = hiddens.copy(), hiddens.copy()
-
 
     @staticmethod
     def get_favorites():
@@ -525,13 +516,16 @@ class MainApp(object):
             print(e)
         return hidden_list
 
-    @staticmethod
-    def is_marked(all_favorite_dict, anime_title):
+    def is_marked(self, anime_title):
         #fav_items = MainApp.get_favorites()
-        if anime_title in list(all_favorite_dict.keys()):
+        if anime_title in list(self.favorite_dict.keys()):
             return True
         else:
             return False
+
+    @ui.in_background
+    def update_cache(self, sender):
+        categories_spider(CATEGORIES, HEADERS, CACHE_DIR_DEFAULT)
 
     def mark(self, anime_dict, btn, sender):
         btn.set_state_loading()
@@ -602,7 +596,7 @@ if __name__ == '__main__':
     FAVORITE_FILE = os.path.join(CACHE_DIR_DEFAULT, 'favorites')
     HISTORY_FILE = os.path.join(CACHE_DIR_DEFAULT, 'history')
     HIDDEN_FILE = os.path.join(CACHE_DIR_DEFAULT, 'hidden')
-    SEARCH_FILE = os.path.join(CACHE_DIR_DEFAULT, 'search')
+    TITLES_FILE = os.path.join(CACHE_DIR_DEFAULT, 'titles')
     
     os.makedirs(CACHE_DIR_DEFAULT, exist_ok=True)
 
