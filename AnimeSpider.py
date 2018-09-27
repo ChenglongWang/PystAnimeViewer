@@ -5,6 +5,10 @@ import urllib.error as error
 #import requests
 import bs4
 from bs4 import BeautifulSoup
+try:
+    import console
+except:
+    pass
 
 HEADERS = {
     'User_Agent':
@@ -28,29 +32,31 @@ CATEGORIES = {
 
 HP_URL = 'http://www.dilidili.wang'
 
+def print_msg(msg, terminal_msg=None, msg_type='error', period=1.0):
+    console.hud_alert(msg, msg_type, period)
+    if terminal_msg:
+        print('{}:{}\n{}\n'.format(msg_type,msg,terminal_msg))
+
 def video_spider(page_url, verbose=True):
-    if verbose: 
-        import console
-    
     try:
         response = request.Request(page_url, headers=HEADERS)
         html = request.urlopen(response).read().decode('UTF-8')
     except error.HTTPError as e:
-        if verbose: console.hud_alert(str(e), 'error', 1.0)
-        print(e)
+        if verbose:
+            print_msg('HTTP error', e)
         return None
     except error.URLError as e:
-        if verbose: console.hud_alert(str(e), 'error', 1.0)
-        print(e)
+        if verbose:
+            print_msg('URL error', e)
         return None
 
     try:
         soup = bs4.BeautifulSoup(html, 'html.parser')
         player = soup.find('iframe', id='player_iframe')
-        print(player)
         video_url = player['src'].split('?url=')[1]
     except Exception as e:
-        if verbose: console.hud_alert('Fail to parse video url', 'error', 1.0)
+        if verbose:
+            print_msg('Fail to parse video url', e)
         print(e)
     else:
         return video_url
@@ -67,13 +73,13 @@ def episodes_spider(page_url, verbose=True):
         response = request.Request(page_url, headers=HEADERS)
         html = request.urlopen(response).read().decode('UTF-8')
     except error.HTTPError as e:
-        if verbose: console.hud_alert('Error: {}'.format(e), 'error', 1.0)
-        print('HTTP error:',e)
-        return None, None
+        if verbose: 
+            print_msg('HTTP error', e)
+        return [None]*3
     except error.URLError as e:
-        if verbose: console.hud_alert('Error: {}'.format(e), 'error', 1.0)
-        print('URL error:',e)
-        return None, None
+        if verbose:
+            print_msg('URL error', e)
+        return [None]*3
 
     #fetch ep links
     episodes = {}
@@ -84,9 +90,9 @@ def episodes_spider(page_url, verbose=True):
             if type(child) is bs4.element.Tag:
                 episodes[child.a.em.span.string] = child.a['href']
     except Exception as e:
-        if verbose: console.hud_alert('Cannot parse webpage!', 'error', 1.5)
-        print(e)
-        return
+        if verbose:
+            print_msg('Cannot parse EPs!', e, period=1.5)
+        episodes = None
 
     # fetch download link
     try:
@@ -95,7 +101,7 @@ def episodes_spider(page_url, verbose=True):
         dl_txt = dl_link.a.string
         download = {'txt':dl_txt, 'url':dl_url}
     except Exception as e:
-        print('No dl link', e)
+        print('No dl link:', e)
         download = None
 
     #fetch intro
@@ -113,7 +119,7 @@ def episodes_spider(page_url, verbose=True):
     return episodes, download, intro
     
 
-def categories_spider(categories, header, out_dir, verbose=True):
+def categories_spider(categories, header, out_dir, output=None, verbose=True):
     
     title_index = {}
     for i, (key, value) in enumerate(categories.items()):
@@ -141,17 +147,22 @@ def categories_spider(categories, header, out_dir, verbose=True):
                     'img': anime.dt.img['src'],
                     'cat':key
                 }
-                title_index[key] = all_contents
+                if output is None:
+                    title_index[key] = all_contents
+                else:
+                    output[key] = all_contents
 
         if verbose:
-            from console import hud_alert as alert
-            alert('{}/{}: {}'.format(i+1, len(categories.items()), key), 'success', 1.0)
+            print_msg('{}/{}: {}'.format(i+1, len(categories.items()), key), msg_type='success')
     
     if os.path.isdir(out_dir):
         with open(os.path.join(out_dir, 'titles'), 'w', encoding='utf8') as f:
-            f.write(json.dumps(title_index, indent=2, ensure_ascii=False))
+            if output is None:
+                f.write(json.dumps(title_index, indent=2, ensure_ascii=False))
+            else:
+                f.write(json.dumps(output, indent=2, ensure_ascii=False))
         if verbose:
-            alert('Finish updating!', 'success', 1.0)
+            print_msg('Finish updating!', msg_type='success')
     
     return title_index
 

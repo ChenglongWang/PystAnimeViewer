@@ -7,8 +7,9 @@ All content are scrapped from Dilidili.com
 import os, sys, re
 import functools
 import json
-import bs4
-from AnimeSpider import CATEGORIES, HEADERS, categories_spider, episodes_spider, video_spider
+from AnimeSpider import (CATEGORIES, HEADERS,
+                        categories_spider, episodes_spider, 
+                        video_spider, print_msg)
 
 try:
     import ui
@@ -19,6 +20,7 @@ except ImportError:
     import dummyconsole as console
 
 __version__ = '1.0.0'
+
 
 class FavoriteButton(object):
 
@@ -138,8 +140,6 @@ class AnimeDetailView(object):
 
         if episodes:
             self.episodes = episodes
-        else:
-            return 
 
         if download:
             m = re.search(r'[a-z0-9]{4}', download['txt'])
@@ -190,8 +190,7 @@ class AnimeDetailView(object):
             webview.load_url(self.video_parsers[self.server_id]+original_url)
             self.app.nav_view.push_view(webview)
         except Exception as e:
-            console.hud_alert('Load video page error', 'error', 1.0)
-            print(e)
+            print_msg('Load video page error', e)
         else:
             new_hist = '{};{};{}'.format(cat,title,ep)
             if self.app.hist_list[0] != new_hist:
@@ -204,7 +203,7 @@ class AnimeDetailView(object):
         try:
             next_btn_id = int(btn_id.strip('btn'))+1
             next_title = self.view['btn'+str(next_btn_id)].title
-            console.hud_alert(next_title, 'success', 1.0)
+            print_msg(next_title, msg_type='success')
         except Exception as e:
             print(e)
         else:
@@ -223,8 +222,7 @@ class AnimeDetailView(object):
                 self.app.favorite_dict[self.anime_title] = self.anime_infos
                 console.hud_alert('Marked', 'success', 0.5)
         except Exception as e:
-            console.hud_alert('Error!', 'error', 1.0)
-            print(e)
+            print_msg('Error!', e)
         else:
             self.app.save_favor()
 
@@ -241,24 +239,6 @@ class AnimeTable(object):
 
         self.view.data_source = self
         self.view.delegate = self
-        #self.load()
-
-    @ui.in_background
-    def load(self):
-        try:
-            title_listdatasource = ui.ListDataSource(
-                {'title': title, 'accessory_type': 'None'}
-                for title in self.anime_titles
-            )
-
-            title_listdatasource.action = self.title_tapped
-            title_listdatasource.delete_enabled = False
-            self.view.data_source = title_listdatasource
-            self.view.delegate = title_listdatasource
-
-            self.view.reload()
-        except Exception as e:
-            console.hud_alert('Failed to load Detail page', 'error', 1.0)
 
     #@ui.in_background
     #def title_tapped(self, sender=None):
@@ -268,8 +248,7 @@ class AnimeTable(object):
             detail_view = AnimeDetailView(self.app, selected_title, self.anime_dict[selected_title])
             self.app.nav_view.push_view(detail_view.view)
         except Exception as e:
-            console.hud_alert('Failed to load page', 'error', 1.0)
-            print(e)
+            print_msg('Failed to load page', e)
 
     def tableview_number_of_sections(self, tableview):
         return 1
@@ -326,7 +305,7 @@ class HistoryTable(object):
         try:
             info = self.app.index[cat][title]
         except:
-            console.hud_alert('This anime is not found!', 'error', 1.0)
+            print_msg('This anime is not found!')
         else:
             detail_view = AnimeDetailView(self.app, title, info)
             self.app.nav_view.push_view(detail_view.view)
@@ -365,7 +344,7 @@ class CategoriesTable(object):
             #ui.ButtonItem(image=ui.Image('iow:refresh_'+icon_size), action=self.update_cache),
             ui.ButtonItem(image=ui.Image('iob:star_'+self.app.icon_size), action=self.show_mark_list),
             ui.ButtonItem(image=ui.Image('iob:search_'+self.app.icon_size), action=self.search_diag),
-            ui.ButtonItem(image=ui.Image('iob:document_'+self.app.icon_size), action=self.show_history)
+            ui.ButtonItem(image=ui.Image('iob:clock_'+self.app.icon_size), action=self.show_history)
         ]
         self.view.left_button_items = [
             ui.ButtonItem(image=ui.Image('iob:close_round_'+self.app.icon_size), action=self.quit)
@@ -387,7 +366,7 @@ class CategoriesTable(object):
                     ret_dict[key] = each_cat[key]
         
         if not ret_dict:
-            console.hud_alert('Not found!', 'error', 1.0)
+            print_msg('Not found!')
             return
             
         tools_table = AnimeTable(self.app, 'Search', ret_dict)
@@ -401,8 +380,7 @@ class CategoriesTable(object):
         try:
             fav_dict = self.app.favorite_dict if self.app.favorite_dict else self.app.get_favorites()
         except Exception as e:
-            console.hud_alert('Get favorites error', 'error', 1.0)
-            print(e)
+            print('Get favorites error', e)
         else:
             tools_table = AnimeTable(self.app, 'Favorites', fav_dict)
             self.app.nav_view.push_view(tools_table.view)
@@ -422,8 +400,7 @@ class CategoriesTable(object):
             self.view.delegate = categories_listdatasource
             self.view.reload()
         except Exception as e:
-            print(e)
-            console.hud_alert('Failed to load Categories', 'error', 1.0)
+            print_msg('Failed to load Categories', e)
         finally:
             self.app.activity_indicator.stop()
 
@@ -434,16 +411,14 @@ class CategoriesTable(object):
         try:
             if sender.items[sender.selected_row]['title'] == '***Update Cache***':
                 if dialogs.alert('Confirm', message='Are u sure to update the cache.\nIt may take a time.',button1='OK'):
-                    self.app.update_cache(None)
+                    self.app.update_cache(self.app.index)
             else:
                 category_name = sender.items[sender.selected_row]['title']
                 #category_file = os.path.join(CACHE_DIR_DEFAULT, self.categories_dict[category_name]+'.txt')
-                #if os.path.isfile(category_file):
                 tools_table = AnimeTable(self.app, category_name, self.app.index[category_name])
                 self.app.nav_view.push_view(tools_table.view)
         except Exception as e:
-            console.hud_alert('Failed to load tablelist', 'error', 1.0)
-            print(e)
+            print('Failed to load cat page', e)
         #finally:
             #self.app.activity_indicator.stop()
 
@@ -456,10 +431,11 @@ class MainApp(object):
         self.display_mode = 'pad' if min(ui.get_screen_size())>=768 else 'phone'
         self.icon_size = '24' if self.display_mode == 'phone' else '32'
 
+        self.index = {}
         if os.path.isfile(TITLES_FILE):
             self.index = self.get_contents_from_file(TITLES_FILE)
         else:
-            self.update_cache(None)
+            self.update_cache(self.index)
 
         categories_table = CategoriesTable(self)
         self.nav_view = ui.NavigationView(categories_table.view)
@@ -524,8 +500,8 @@ class MainApp(object):
             return False
 
     @ui.in_background
-    def update_cache(self, sender):
-        categories_spider(CATEGORIES, HEADERS, CACHE_DIR_DEFAULT)
+    def update_cache(self, index):
+        return categories_spider(CATEGORIES, HEADERS, CACHE_DIR_DEFAULT, index)
 
     def mark(self, anime_dict, btn, sender):
         btn.set_state_loading()
@@ -546,7 +522,7 @@ class MainApp(object):
             sys.stderr.write('%s\n' % repr(e))
             import traceback
             traceback.print_exception(etype, evalue, tb)
-            console.hud_alert('Marking failed', 'error', 1.0)
+            print('Mark failed', e)
         else:
             btn.set_state_unmark()
             self.save_favor()
@@ -558,8 +534,8 @@ class MainApp(object):
             # self.favorites.remove(btn.anime_title)
             self.favorite_dict.pop(btn.anime_title)
             console.hud_alert('Unmarked', 'success', 0.5)
-        except ValueError:
-            console.hud_alert('{} is not marklist?\nUnmark failed'.format(btn.anime_title), 'error', 1.0)
+        except ValueError as e:
+            print('{} is not in marklist?\nUnmark failed'.format(btn.anime_title), e)
         else:
             btn.set_state_mark()
             self.save_favor()
