@@ -197,7 +197,7 @@ class AnimeDetailView(object):
                 self.app.hist_list = [new_hist] + self.app.hist_list
             
                 with open(HISTORY_FILE, 'a', encoding='utf8') as f:
-                   f.write(new_hist+'\n')
+                    f.write(new_hist+'\n')
         
     def show_next_video(self, btn_id, webviewer, sender):
         try:
@@ -295,7 +295,7 @@ class HistoryTable(object):
         self.view.allows_selection = True
         self.view.data_source = self
         self.view.delegate = self
-        self.view.right_button_items = [ui.ButtonItem(image=ui.Image('typb:Delete'),action=self.clear)]
+        self.view.right_button_items = [ui.ButtonItem(image=ui.Image('iob:close_circled_'+self.app.icon_size),action=self.clear)]
 
     def clear(self, sender):
         self.app.hist_list = []
@@ -493,7 +493,6 @@ class MainApp(object):
         return hidden_list
 
     def is_marked(self, anime_title):
-        #fav_items = MainApp.get_favorites()
         if anime_title in list(self.favorite_dict.keys()):
             return True
         else:
@@ -566,9 +565,13 @@ class MainApp(object):
                     f.write(hist+'\n')
     
 if __name__ == '__main__':
-    
+    import argparse
+    parser = argparse.ArgumentParser(description='Pythonista Anime viewer')
+    parser.add_argument('--cache_dir', type=str, default='.bangumi', help='Folder name for storing cache files')
+
+    args = parser.parse_args()
     SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-    CACHE_DIR_DEFAULT = os.path.join(SCRIPT_DIR, 'bangumi')
+    CACHE_DIR_DEFAULT = os.path.join(SCRIPT_DIR, args.cache_dir)
     FAVORITE_FILE = os.path.join(CACHE_DIR_DEFAULT, 'favorites')
     HISTORY_FILE = os.path.join(CACHE_DIR_DEFAULT, 'history')
     HIDDEN_FILE = os.path.join(CACHE_DIR_DEFAULT, 'hidden')

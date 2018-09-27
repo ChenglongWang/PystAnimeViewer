@@ -66,9 +66,6 @@ def episodes_spider(page_url, verbose=True):
     Return 
         episodes, download, intro <- all dict type
     '''
-    if verbose:
-        import console
-
     try:
         response = request.Request(page_url, headers=HEADERS)
         html = request.urlopen(response).read().decode('UTF-8')
@@ -117,10 +114,8 @@ def episodes_spider(page_url, verbose=True):
         intro = None
     
     return episodes, download, intro
-    
 
 def categories_spider(categories, header, out_dir, output=None, verbose=True):
-    
     title_index = {}
     for i, (key, value) in enumerate(categories.items()):
         sub_url = HP_URL+'/'+value
